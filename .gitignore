@@ -180,3 +180,6 @@ PGOHelper/PGOMesenHome
 packages/*
 
 !Libretro/hakchi/bin
+
+# AI翻译器配置文件（包含敏感信息）
+GUI.NET/app.config

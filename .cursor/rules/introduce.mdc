@@ -1,0 +1,10 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+- 这是基于Mesen的一个分支项目，Mesen是一个NES游戏模拟器，这个项目的主要任务是给TextHooker添加翻译功能，使其能够把日文或者英语翻译为中文
+- 操作系统：Windows
+- 项目版本：基于 Framework 4.8
+- 不要运行构建命令。我稍后会自己运行编译命令。

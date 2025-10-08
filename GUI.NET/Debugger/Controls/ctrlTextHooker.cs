@@ -13,6 +13,7 @@ using Mesen.GUI.Controls;
 using Mesen.GUI.Forms;
 using System.Collections.Concurrent;
 using System.Drawing.Imaging;
+using Mesen.GUI;
 
 namespace Mesen.GUI.Debugger.Controls
 {
@@ -31,10 +32,27 @@ namespace Mesen.GUI.Debugger.Controls
 		private DebugState _state = new DebugState();
 		private ConcurrentDictionary<string, string> _charMappings;
 		private string _prevText;
+		
+		// 翻译相关字段
+		private Timer _translateTimer;
+		private string _lastTranslatedText = "";
+		private bool _isTranslating = false;
+		
+		// 倒计时相关字段
+		private DateTime _lastTranslateTime;
+		private const int TranslateIntervalSeconds = 5;
 
 		public ctrlTextHooker()
 		{
 			InitializeComponent();
+			
+			// 初始化翻译定时器
+			_translateTimer = new Timer();
+			_translateTimer.Interval = 1000; // 1秒间隔，用于更新倒计时显示
+			_translateTimer.Tick += TranslateTimer_Tick;
+			
+			// 初始化倒计时时间
+			_lastTranslateTime = DateTime.Now.AddSeconds(-TranslateIntervalSeconds);
 		}
 
 		protected override void OnLoad(EventArgs e)
@@ -58,6 +76,13 @@ namespace Mesen.GUI.Debugger.Controls
 				debugInfo.TextHookerIgnoreMirroredNametables = chkIgnoreMirroredNametables.Checked;
 				debugInfo.TextHookerAdjustViewportScrolling = chkUseScrollOffsets.Checked;
 				debugInfo.TextHookerAutoCopyToClipboard = chkAutoCopyToClipboard.Checked;
+				
+				// 停止并释放翻译定时器
+				if(_translateTimer != null) {
+					_translateTimer.Stop();
+					_translateTimer.Dispose();
+					_translateTimer = null;
+				}
 			}
 		}
 
@@ -281,6 +306,128 @@ namespace Mesen.GUI.Debugger.Controls
 				} catch {
 					//This can sometime fail if another program is trying to use the clipboard at the same time
 				}
+			}
+		}
+
+		/// <summary>
+		/// 处理 ActiveTranslateCheckBox 的勾选状态变化
+		/// </summary>
+		private void ActiveTranslateCheckBox_CheckedChanged(object sender, EventArgs e)
+		{
+			UpdateTextBoxVisibility();
+
+			if(ActiveTranslateCheckBox.Checked) {
+				// 启用翻译功能
+				_translateTimer.Start();
+				btnManualTranslate.Visible = true;
+				UpdateCountdownButton();
+				// 立即执行一次翻译检查
+				TranslateTimer_Tick(null, null);
+			} else {
+				// 禁用翻译功能
+				_translateTimer.Stop();
+				btnManualTranslate.Visible = false;
+				TranslateTextBox.Text = "";
+				_lastTranslatedText = "";
+				_isTranslating = false;
+			}
+		}
+
+		/// <summary>
+		/// 根据勾选状态切换文本框显示
+		/// </summary>
+		private void UpdateTextBoxVisibility()
+		{
+			bool isActive = ActiveTranslateCheckBox.Checked;
+			// 勾选时仅显示翻译框
+			TranslateTextBox.Visible = isActive;
+			TranslateTextBox.Enabled = isActive;
+			txtSelectedText.Visible = !isActive;
+			txtSelectedText.Enabled = !isActive;
+		}
+
+		/// <summary>
+		/// 处理手动翻译按钮点击事件
+		/// </summary>
+		private async void btnManualTranslate_Click(object sender, EventArgs e)
+		{
+			// 立即执行翻译
+			await PerformTranslation();
+			// 重置倒计时时间
+			_lastTranslateTime = DateTime.Now;
+		}
+
+		/// <summary>
+		/// 定时器 Tick 事件处理 - 更新倒计时显示并检查是否需要翻译
+		/// </summary>
+		private async void TranslateTimer_Tick(object sender, EventArgs e)
+		{
+			// 更新倒计时按钮显示
+			UpdateCountdownButton();
+			
+			// 检查是否到了翻译时间
+			if(DateTime.Now.Subtract(_lastTranslateTime).TotalSeconds >= TranslateIntervalSeconds) {
+				await PerformTranslation();
+			}
+		}
+
+		/// <summary>
+		/// 更新倒计时按钮的显示文本
+		/// </summary>
+		private void UpdateCountdownButton()
+		{
+			if(!ActiveTranslateCheckBox.Checked || !btnManualTranslate.Visible) {
+				return;
+			}
+
+			double remainingSeconds = TranslateIntervalSeconds - DateTime.Now.Subtract(_lastTranslateTime).TotalSeconds;
+			if(remainingSeconds <= 0) {
+				btnManualTranslate.Text = "立即翻译";
+			} else {
+				btnManualTranslate.Text = $"立即翻译 ({Math.Ceiling(remainingSeconds)}s)";
+			}
+		}
+
+		/// <summary>
+		/// 执行翻译操作
+		/// </summary>
+		private async Task PerformTranslation()
+		{
+			// 如果正在翻译中，跳过本次检查
+			if(_isTranslating) {
+				return;
+			}
+
+			string currentText = txtSelectedText.Text?.Trim();
+			
+			// 检查文本是否满足翻译条件
+			if(string.IsNullOrEmpty(currentText) || 
+			   currentText.Length <= 2 || 
+			   currentText == _lastTranslatedText) {
+				return;
+			}
+
+			// 开始翻译
+			_isTranslating = true;
+			TranslateTextBox.Text = "翻译中...";
+			_lastTranslateTime = DateTime.Now; // 更新翻译时间
+			
+			try {
+				// 调用 AI 翻译服务
+				string translatedText = await AiTranslator.TranslateAsync(currentText);
+				translatedText = translatedText.Replace("\n", "\r\n");
+				// 更新翻译结果
+				if(!string.IsNullOrEmpty(translatedText)) {
+					TranslateTextBox.Text = translatedText;
+					_lastTranslatedText = currentText;
+				} else {
+					TranslateTextBox.Text = "翻译失败";
+				}
+			} catch(Exception ex) {
+				// 翻译出错时的处理
+				TranslateTextBox.Text = $"翻译出错: {ex.Message}";
+			} finally {
+				_isTranslating = false;
 			}
 		}
 	}
